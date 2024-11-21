@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -45,7 +44,6 @@ import org.astraea.common.admin.TopicPartition;
 public class SendYourData {
 
   private static final int NUMBER_OF_PARTITIONS = 4;
-  private static final ConcurrentHashMap<Key, byte[]> cache = new ConcurrentHashMap<>();
 
   public static void main(String[] args) throws IOException, InterruptedException {
     execute(Argument.parse(new Argument(), args));
@@ -141,16 +139,12 @@ public class SendYourData {
     public YourSender(String bootstrapServers) {
       Serializer<Key> serializer =
           (topic, key) -> {
-            if (cache.get(key) == null) {
-              var buffer = ByteBuffer.allocate(Long.BYTES * key.vs.size());
-              key.vs.forEach(buffer::putLong);
-              buffer.flip();
-              var bytes = new byte[buffer.remaining()];
-              buffer.get(bytes);
-              cache.put(key, bytes);
-              return bytes;
-            }
-            return cache.get(key);
+            var buffer = ByteBuffer.allocate(Long.BYTES * key.vs.size());
+            key.vs.forEach(buffer::putLong);
+            buffer.flip();
+            var bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+            return bytes;
           };
       producer =
           new KafkaProducer<>(
