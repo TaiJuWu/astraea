@@ -142,9 +142,7 @@ public class SendYourData {
             var buffer = ByteBuffer.allocate(Long.BYTES * key.vs.size());
             key.vs.forEach(buffer::putLong);
             buffer.flip();
-            var bytes = new byte[buffer.remaining()];
-            buffer.get(bytes);
-            return bytes;
+            return buffer.array();
           };
       producer =
           new KafkaProducer<>(
