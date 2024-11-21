@@ -45,7 +45,7 @@ import org.astraea.common.admin.TopicPartition;
 public class SendYourData {
 
   private static final int NUMBER_OF_PARTITIONS = 4;
-  private static final ConcurrentHashMap<Key, byte[]> cache = new ConcurrentHashMap<>();
+  private static final ConcurrentHashMap<Key, ByteBuffer> cache = new ConcurrentHashMap<>();
 
   public static void main(String[] args) throws IOException, InterruptedException {
     execute(Argument.parse(new Argument(), args));
@@ -144,13 +144,10 @@ public class SendYourData {
             if (cache.get(key) == null) {
               var buffer = ByteBuffer.allocate(Long.BYTES * key.vs.size());
               key.vs.forEach(buffer::putLong);
-              buffer.flip();
-              var bytes = new byte[buffer.remaining()];
-              buffer.get(bytes);
-              cache.put(key, bytes);
-              return bytes;
+              cache.put(key, buffer);
+              return buffer.array();
             }
-            return cache.get(key);
+            return cache.get(key).array();
           };
       producer =
           new KafkaProducer<>(
