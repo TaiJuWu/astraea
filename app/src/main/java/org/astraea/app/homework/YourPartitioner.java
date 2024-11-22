@@ -17,6 +17,7 @@
 package org.astraea.app.homework;
 
 import java.util.Map;
+import java.util.Random;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.common.Cluster;
 
@@ -33,7 +34,10 @@ public class YourPartitioner implements Partitioner {
     var partitions = cluster.availablePartitionsForTopic(topic);
     // no available partition so we return -1
     if (partitions.isEmpty()) return -1;
-    return partitions.get(0).partition();
+    var partitionSize = partitions.size();
+    var random = new Random();
+    var rand = random.nextInt(partitionSize);
+    return partitions.get(rand).partition();
   }
 
   @Override
