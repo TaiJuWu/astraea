@@ -73,9 +73,9 @@ RUN wget https://raw.githubusercontent.com/prometheus/jmx_exporter/master/exampl
 RUN wget https://REPO1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/${EXPORTER_VERSION}/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar
 
 # build kafka from source code
-RUN git clone --depth=1 ${kafka_repo} /tmp/kafka
+RUN git clone ${kafka_repo} /tmp/kafka
 WORKDIR /tmp/kafka
-RUN git fetch --depth=1 origin $KAFKA_VERSION
+RUN git fetch origin $KAFKA_VERSION
 RUN git checkout $KAFKA_VERSION
 RUN ./gradlew clean releaseTarGz
 RUN mkdir /opt/kafka
@@ -226,11 +226,11 @@ setPropertyIfEmpty "transaction.state.log.replication.factor" "1"
 setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
-setPropertyIfEmpty "log.dirs" "/tmp/kafka-meta"
+setPropertyIfEmpty "log.dirs" "/tmp/${META_FOLDER}"
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
-  metaMountCommand="-v $META_FOLDER:/tmp/kafka-meta:Z"
+  metaMountCommand="-v /tmp/$META_FOLDER:/tmp/${META_FOLDER}:Z"
 fi
 
 release_version=""
