@@ -40,8 +40,8 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
   -Dcom.sun.management.jmxremote.rmi.port=$CONTROLLER_JMX_PORT \
   -Djava.rmi.server.hostname=$ADDRESS"
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
-declare -r CONTROLLER_PROPERTIES="/tmp/controller-${CONTROLLER_PORT}.properties"
-declare -r IMAGE_NAME="ghcr.io/${ACCOUNT,,}/astraea/controller:$KAFKA_VERSION"
+declare -r CONTROLLER_PROPERTIES="/tmp/controller-${NODE_ID}-${CONTROLLER_PORT}.properties"
+declare -r IMAGE_NAME="ghcr.io/${ACCOUNT}/astraea/controller:$KAFKA_VERSION"
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
 [[ -f "$CONTROLLER_PROPERTIES" ]] && rm -f "$CONTROLLER_PROPERTIES"
@@ -131,6 +131,8 @@ FROM azul/zulu-openjdk:23-jre
 # copy kafka
 COPY --from=build /opt/jmx_exporter /opt/jmx_exporter
 COPY --from=build /opt/kafka /opt/kafka
+
+RUN apt-get update && apt-get install -y wget
 
 # add user
 RUN groupadd $USER && useradd -ms /bin/bash -g $USER $USER
@@ -259,6 +261,7 @@ docker run -d --init \
 if [ "$(echo $?)" -eq 0 ]; then
   echo "================================================="
   [[ -n "$META_FOLDER" ]] && echo "mount $META_FOLDER to container: $CONTAINER_NAME"
+  echo "node.id:" ${NODE_ID}
   echo "controller address: ${ADDRESS}:$CONTROLLER_PORT"
   echo "jmx address: ${ADDRESS}:$CONTROLLER_JMX_PORT"
   echo "exporter address: ${ADDRESS}:$EXPORTER_PORT"

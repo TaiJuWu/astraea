@@ -58,7 +58,13 @@ function generateControllerPort() {
 
 # don't change the length as it is expected 16 bytes of a base64-encoded UUID
 function randomString() {
-  echo $(cat /dev/random | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w 22 | head -n 1)
+  len=22
+  chars=({a..z} {A..Z} {0..9})
+  str=""
+  for i in $(seq 1 $len); do
+    str+="${chars[RANDOM % ${#chars[@]}]}"
+  done
+  echo "$str"
 }
 
 function checkDocker() {

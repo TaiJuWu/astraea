@@ -44,7 +44,7 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
   -Djava.rmi.server.hostname=$ADDRESS"
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
 declare -r BROKER_PROPERTIES="/tmp/server-${BROKER_PORT}.properties"
-declare -r IMAGE_NAME="ghcr.io/${ACCOUNT,,}/astraea/broker:${KAFKA_VERSION,,}"
+declare -r IMAGE_NAME="ghcr.io/${ACCOUNT}/astraea/broker:${KAFKA_VERSION}"
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
 [[ -f "$BROKER_PROPERTIES" ]] && rm -f "$BROKER_PROPERTIES"
@@ -85,9 +85,9 @@ RUN wget https://raw.githubusercontent.com/prometheus/jmx_exporter/master/exampl
 RUN wget https://REPO1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/${EXPORTER_VERSION}/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar
 
 # build kafka from source code
-RUN git clone --depth=1 ${kafka_repo} /tmp/kafka
+RUN git clone ${kafka_repo} /tmp/kafka
 WORKDIR /tmp/kafka
-RUN git fetch --depth=1 origin $KAFKA_VERSION
+RUN git fetch origin $KAFKA_VERSION
 RUN git checkout $KAFKA_VERSION
 RUN ./gradlew clean releaseTarGz
 RUN mkdir /opt/kafka
