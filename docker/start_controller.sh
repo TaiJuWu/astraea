@@ -28,7 +28,7 @@ declare -r EXPORTER_PORT=${EXPORTER_PORT:-"$(getRandomPort)"}
 declare -r NODE_ID=${NODE_ID:-"$(getRandomPort)"}
 declare -r VOTERS=${VOTERS:-""}
 declare -r CONTROLLER_PORT=${CONTROLLER_PORT:-"$(generateControllerPort)"}
-declare -r CONTAINER_NAME="controller-$NODE_ID"
+declare -r CONTAINER_NAME="controller-$NODE_ID-${CONTROLLER_PORT}"
 declare -r BOOTSTRAP_HOST=${BOOTSTRAP_HOST:-""}
 declare -r CONTROLLER_JMX_PORT="${CONTROLLER_JMX_PORT:-"$(getRandomPort)"}"
 declare -r JMX_CONFIG_FILE="${JMX_CONFIG_FILE}"
@@ -80,6 +80,7 @@ RUN git checkout $KAFKA_VERSION
 RUN ./gradlew clean releaseTarGz
 RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
+COPY log4j2.yaml /opt/kafka
 
 FROM azul/zulu-openjdk:23-jre
 
@@ -249,6 +250,7 @@ docker run -d --init \
   -e KAFKA_HEAP_OPTS="$HEAP_OPTS" \
   -e KAFKA_JMX_OPTS="$JMX_OPTS" \
   -e KAFKA_OPTS="-javaagent:/opt/jmx_exporter/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar=$EXPORTER_PORT:$JMX_CONFIG_FILE_IN_CONTAINER_PATH" \
+  -e KAFKA_LOG4J_OPTS="-Dkafka.logs.dir=${META_FOLDER}/log4j_logs" \
   -v $CONTROLLER_PROPERTIES:/tmp/controller.properties:ro,Z \
   $(generateJmxConfigMountCommand) \
   $metaMountCommand \
