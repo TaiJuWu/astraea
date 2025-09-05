@@ -28,7 +28,7 @@ declare -r EXPORTER_VERSION="0.16.1"
 declare -r EXPORTER_PORT=${EXPORTER_PORT:-"$(getRandomPort)"}
 declare -r NODE_ID=${NODE_ID:-"$(getRandomPort)"}
 declare -r BROKER_PORT=${BROKER_PORT:-"$(getRandomPort)"}
-declare -r CONTAINER_NAME="broker-$NODE_ID"
+declare -r CONTAINER_NAME="broker-$NODE_ID-$BROKER_PORT"
 declare -r BROKER_JMX_PORT="${BROKER_JMX_PORT:-"$(getRandomPort)"}"
 declare -r ADMIN_NAME="admin"
 declare -r ADMIN_PASSWORD="admin-secret"
@@ -43,7 +43,8 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
   -Dcom.sun.management.jmxremote.rmi.port=$BROKER_JMX_PORT \
   -Djava.rmi.server.hostname=$ADDRESS"
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
-declare -r BROKER_PROPERTIES="/tmp/server-${BROKER_PORT}.properties"
+declare -r BROKER_PROPERTIES="/tmp/server-${NODE_ID}-${BROKER_PORT}.properties"
+declare -r LOG4j2_YAML="/tmp/log4j2-${NODE_ID}-${BROKER_PORT}.yaml"
 declare -r IMAGE_NAME="ghcr.io/${ACCOUNT}/astraea/broker:${KAFKA_VERSION}"
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
@@ -94,9 +95,9 @@ RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
 
 # build astraea from source code
-RUN git clone --depth=1 ${astraea_repo} /tmp/astraea
+RUN git clone ${astraea_repo} /tmp/astraea
 WORKDIR /tmp/astraea
-RUN git fetch --depth=1 origin $VERSION
+RUN git fetch origin $VERSION
 RUN git checkout $VERSION
 RUN ./gradlew clean build -x test
 RUN cp /tmp/astraea/common/build/libs/*.jar /opt/kafka/libs/
@@ -347,12 +348,16 @@ if [[ "$quorum" == "kraft" ]]; then
   fi
 fi
 
+cp ${DOCKER_FOLDER}/../log4j2.yaml ${LOG4j2_YAML}
+
 docker run -d --init \
   --name $CONTAINER_NAME \
   -e KAFKA_HEAP_OPTS="$HEAP_OPTS" \
   -e KAFKA_JMX_OPTS="$JMX_OPTS" \
   -e KAFKA_OPTS="-javaagent:/opt/jmx_exporter/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar=$EXPORTER_PORT:$JMX_CONFIG_FILE_IN_CONTAINER_PATH" \
   -v $BROKER_PROPERTIES:/tmp/broker.properties:ro,Z \
+  -v ${DATA_FOLDERS}/logs:/opt/kafka/logs \
+  -v ${LOG4j2_YAML}:/opt/kafka/config/log4j2.yaml \
   $(generateJmxConfigMountCommand) \
   $(generateDataFolderMountCommand) \
   -p $BROKER_PORT:9092 \
