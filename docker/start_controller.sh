@@ -41,6 +41,7 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
   -Djava.rmi.server.hostname=$ADDRESS"
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
 declare -r CONTROLLER_PROPERTIES="/tmp/controller-${NODE_ID}-${CONTROLLER_PORT}.properties"
+declare -r LOG4j2_YAML="/tmp/log4j2-${NODE_ID}-${CONTROLLER_PORT}.yaml"
 declare -r IMAGE_NAME="ghcr.io/${ACCOUNT}/astraea/controller:$KAFKA_VERSION"
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
@@ -80,7 +81,6 @@ RUN git checkout $KAFKA_VERSION
 RUN ./gradlew clean releaseTarGz
 RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
-COPY log4j2.yaml /opt/kafka
 
 FROM azul/zulu-openjdk:23-jre
 
@@ -245,13 +245,16 @@ if [[ "$addVoter" == "true" ]]; then
   command="./bin/kafka-storage.sh format -t $CLUSTER_ID $release_version -c /tmp/controller.properties --no-initial-controllers && ./bin/kafka-server-start.sh /tmp/controller.properties"
 fi
 
+cp ${DOCKER_FOLDER}/../log4j2.yaml ${LOG4j2_YAML}
+
 docker run -d --init \
   --name $CONTAINER_NAME \
   -e KAFKA_HEAP_OPTS="$HEAP_OPTS" \
   -e KAFKA_JMX_OPTS="$JMX_OPTS" \
   -e KAFKA_OPTS="-javaagent:/opt/jmx_exporter/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar=$EXPORTER_PORT:$JMX_CONFIG_FILE_IN_CONTAINER_PATH" \
-  -e KAFKA_LOG4J_OPTS="-Dkafka.logs.dir=${META_FOLDER}/log4j_logs" \
   -v $CONTROLLER_PROPERTIES:/tmp/controller.properties:ro,Z \
+  -v /tmp/${META_FOLDER}/logs:/opt/kafka/logs \
+  -v ${LOG4j2_YAML}:/opt/kafka/config/log4j2.yaml \
   $(generateJmxConfigMountCommand) \
   $metaMountCommand \
   -h $CONTAINER_NAME \
