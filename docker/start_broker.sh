@@ -350,6 +350,7 @@ fi
 
 cp ${DOCKER_FOLDER}/../log4j2.yaml ${LOG4j2_YAML}
 
+# FIXME: 927e6ac will cause broker shutdown, we should apply same fix for controller?
 docker run -d --init \
   --name $CONTAINER_NAME \
   -e KAFKA_HEAP_OPTS="$HEAP_OPTS" \
