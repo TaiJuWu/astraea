@@ -356,7 +356,7 @@ docker run -d --init \
   -e KAFKA_JMX_OPTS="$JMX_OPTS" \
   -e KAFKA_OPTS="-javaagent:/opt/jmx_exporter/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar=$EXPORTER_PORT:$JMX_CONFIG_FILE_IN_CONTAINER_PATH" \
   -v $BROKER_PROPERTIES:/tmp/broker.properties:ro,Z \
-  -v ${DATA_FOLDERS}/logs:/opt/kafka/logs \
+  -v /tmp/${CONTAINER_NAME}-logs:/opt/kafka/logs \
   -v ${LOG4j2_YAML}:/opt/kafka/config/log4j2.yaml \
   $(generateJmxConfigMountCommand) \
   $(generateDataFolderMountCommand) \

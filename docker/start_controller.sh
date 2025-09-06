@@ -231,7 +231,7 @@ setPropertyIfEmpty "log.dirs" "${META_FOLDER}"
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
-  metaMountCommand="-v $META_FOLDER:/tmp/${META_FOLDER}:Z"
+  metaMountCommand="-v $META_FOLDER:${META_FOLDER}:Z"
 fi
 
 release_version=""
@@ -253,7 +253,7 @@ docker run -d --init \
   -e KAFKA_JMX_OPTS="$JMX_OPTS" \
   -e KAFKA_OPTS="-javaagent:/opt/jmx_exporter/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar=$EXPORTER_PORT:$JMX_CONFIG_FILE_IN_CONTAINER_PATH" \
   -v $CONTROLLER_PROPERTIES:/tmp/controller.properties:ro,Z \
-  -v ${META_FOLDER}/logs:/opt/kafka/logs \
+  -v /tmp/${CONTAINER_NAME}-logs:/opt/kafka/logs \
   -v ${LOG4j2_YAML}:/opt/kafka/config/log4j2.yaml \
   $(generateJmxConfigMountCommand) \
   $metaMountCommand \
