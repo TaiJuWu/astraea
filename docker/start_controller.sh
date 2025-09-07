@@ -28,7 +28,7 @@ declare -r EXPORTER_PORT=${EXPORTER_PORT:-"$(getRandomPort)"}
 declare -r NODE_ID=${NODE_ID:-"$(getRandomPort)"}
 declare -r VOTERS=${VOTERS:-""}
 declare -r CONTROLLER_PORT=${CONTROLLER_PORT:-"$(generateControllerPort)"}
-declare -r CONTAINER_NAME="controller-$NODE_ID-${CONTROLLER_PORT}"
+declare -r CONTAINER_NAME=${CONTAINER_NAME:-"controller-$NODE_ID-${CONTROLLER_PORT}"}
 declare -r BOOTSTRAP_HOST=${BOOTSTRAP_HOST:-""}
 declare -r CONTROLLER_JMX_PORT="${CONTROLLER_JMX_PORT:-"$(getRandomPort)"}"
 declare -r JMX_CONFIG_FILE="${JMX_CONFIG_FILE}"
@@ -227,11 +227,11 @@ setPropertyIfEmpty "transaction.state.log.replication.factor" "1"
 setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
-setPropertyIfEmpty "log.dirs" "${META_FOLDER}"
+setPropertyIfEmpty "log.dirs" "/tmp/kafka-meta"
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
-  metaMountCommand="-v $META_FOLDER:${META_FOLDER}:Z"
+  metaMountCommand="-v $META_FOLDER:/tmp/kafka-meta:Z"
 fi
 
 release_version=""
