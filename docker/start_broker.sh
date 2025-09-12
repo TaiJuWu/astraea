@@ -45,7 +45,7 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
 declare -r BROKER_PROPERTIES="/tmp/server-${NODE_ID}-${BROKER_PORT}.properties"
 declare -r LOG4j2_YAML="/tmp/log4j2-${NODE_ID}-${BROKER_PORT}.yaml"
-declare -r IMAGE_NAME="ghcr.io/${ACCOUNT}/astraea/broker:${KAFKA_VERSION}"
+declare -r IMAGE_NAME=${IMAGE_NAME:-"ghcr.io/${ACCOUNT}/astraea/broker:${KAFKA_VERSION}"}
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
 [[ -f "$BROKER_PROPERTIES" ]] && rm -f "$BROKER_PROPERTIES"
@@ -90,7 +90,7 @@ RUN git clone ${kafka_repo} /tmp/kafka
 WORKDIR /tmp/kafka
 RUN git fetch origin $KAFKA_VERSION
 RUN git checkout $KAFKA_VERSION
-RUN ./gradlew clean releaseTarGz
+RUN ./gradlew clean releaseTarGz --parallel
 RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
 
