@@ -25,10 +25,10 @@ declare -r DOCKERFILE=$DOCKER_FOLDER/controller.dockerfile
 declare -r EXPORTER_VERSION="0.16.1"
 declare -r CLUSTER_ID=${CLUSTER_ID:-"$(randomString)"}
 declare -r EXPORTER_PORT=${EXPORTER_PORT:-"$(getRandomPort)"}
-declare -r NODE_ID=${NODE_ID:-"$(getRandomPort)"}
 declare -r VOTERS=${VOTERS:-""}
 declare -r CONTROLLER_PORT=${CONTROLLER_PORT:-"$(generateControllerPort)"}
-declare -r CONTAINER_NAME=${CONTAINER_NAME:-"controller-$NODE_ID-${CONTROLLER_PORT}"}
+declare -r NODE_ID=${CONTROLLER_PORT}
+declare -r CONTAINER_NAME=${CONTAINER_NAME:-"controller-${CONTROLLER_PORT}"}
 declare -r BOOTSTRAP_HOST=${BOOTSTRAP_HOST:-""}
 declare -r CONTROLLER_JMX_PORT="${CONTROLLER_JMX_PORT:-"$(getRandomPort)"}"
 declare -r JMX_CONFIG_FILE="${JMX_CONFIG_FILE}"
@@ -40,8 +40,8 @@ declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
   -Dcom.sun.management.jmxremote.rmi.port=$CONTROLLER_JMX_PORT \
   -Djava.rmi.server.hostname=$ADDRESS"
 declare -r HEAP_OPTS="${HEAP_OPTS:-"-Xmx2G -Xms2G"}"
-declare -r CONTROLLER_PROPERTIES="/tmp/controller-${NODE_ID}-${CONTROLLER_PORT}.properties"
-declare -r LOG4j2_YAML="/tmp/log4j2-${NODE_ID}-${CONTROLLER_PORT}.yaml"
+declare -r CONTROLLER_PROPERTIES="/tmp/controller-${CONTROLLER_PORT}.properties"
+declare -r LOG4j2_YAML="/tmp/log4j2-${CONTROLLER_PORT}.yaml"
 declare -r IMAGE_NAME=${IMAGE_NAME:-"ghcr.io/${ACCOUNT}/astraea/controller:$KAFKA_VERSION"}
 declare -r METADATA_VERSION=${METADATA_VERSION:-""}
 # cleanup the file if it is existent
@@ -227,7 +227,7 @@ setPropertyIfEmpty "transaction.state.log.replication.factor" "1"
 setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
-setPropertyIfEmpty "log.dirs" "/tmp/kafka-meta"
+setPropertyIfEmpty "log.dirs" "${META_FOLDER}"
 setPropertyIfEmpty "metadata.log.segment.bytes" "8388608"
 setPropertyIfEmpty "metadata.log.segment.ms" "60000"
 setPropertyIfEmpty "metadata.max.retention.bytes" "8388608"
@@ -241,7 +241,7 @@ setPropertyIfEmpty "metadata.log.max.record.bytes.between.snapshots" "1048576"
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
-  metaMountCommand="-v $META_FOLDER:/tmp/kafka-meta:Z"
+  metaMountCommand="-v $META_FOLDER:/$META_FOLDER:Z"
 fi
 
 release_version=""
