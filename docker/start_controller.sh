@@ -228,16 +228,6 @@ setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
 setPropertyIfEmpty "log.dirs" "${META_FOLDER}"
-setPropertyIfEmpty "metadata.log.segment.bytes" "8388608"
-setPropertyIfEmpty "metadata.log.segment.ms" "60000"
-setPropertyIfEmpty "metadata.max.retention.bytes" "8388608"
-setPropertyIfEmpty "metadata.max.retention.ms" "30000"
-setPropertyIfEmpty "compression.type" "gzip"
-setPropertyIfEmpty "log.cleanup.policy" "compact"
-setPropertyIfEmpty "log.cleaner.delete.retention.ms" "30000"
-setPropertyIfEmpty "metadata.log.max.snapshot.interval.ms" "5000"
-setPropertyIfEmpty "metadata.log.max.record.bytes.between.snapshots" "1048576"
-
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
