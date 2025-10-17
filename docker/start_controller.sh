@@ -31,6 +31,7 @@ declare -r NODE_ID=${CONTROLLER_PORT}
 declare -r CONTAINER_NAME=${CONTAINER_NAME:-"controller-${CONTROLLER_PORT}"}
 declare -r BOOTSTRAP_HOST=${BOOTSTRAP_HOST:-""}
 declare -r CONTROLLER_JMX_PORT="${CONTROLLER_JMX_PORT:-"$(getRandomPort)"}"
+declare -r META_FOLDER=${META_FOLDER:-/tmp/meta-${NODE_ID}}
 declare -r JMX_CONFIG_FILE="${JMX_CONFIG_FILE}"
 declare -r JMX_CONFIG_FILE_IN_CONTAINER_PATH="/opt/jmx_exporter/jmx_exporter_config.yml"
 declare -r JMX_OPTS="-Dcom.sun.management.jmxremote \
@@ -74,10 +75,11 @@ RUN wget https://raw.githubusercontent.com/prometheus/jmx_exporter/master/exampl
 RUN wget https://REPO1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/${EXPORTER_VERSION}/jmx_prometheus_javaagent-${EXPORTER_VERSION}.jar
 
 # build kafka from source code
-RUN git clone ${kafka_repo} /tmp/kafka
+# RUN git clone ${kafka_repo} /tmp/kafka
+COPY kafka /tmp/kafka
 WORKDIR /tmp/kafka
-RUN git fetch origin $KAFKA_VERSION
-RUN git checkout $KAFKA_VERSION
+#RUN git fetch origin $KAFKA_VERSION
+#RUN git checkout $KAFKA_VERSION
 RUN ./gradlew clean releaseTarGz --parallel
 RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
@@ -228,6 +230,7 @@ setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
 setPropertyIfEmpty "log.dirs" "${META_FOLDER}"
+setPropertyIfEmpty "controller.quorum.auto.join.enable" "true"
 
 metaMountCommand=""
 if [[ -n "$META_FOLDER" ]]; then
