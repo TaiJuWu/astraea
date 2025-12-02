@@ -88,8 +88,8 @@ RUN wget https://REPO1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaage
 # build kafka from source code
 RUN git clone ${kafka_repo} /tmp/kafka
 WORKDIR /tmp/kafka
-RUN git fetch origin $KAFKA_VERSION
-RUN git checkout $KAFKA_VERSION
+RUN git fetch --depth=1 origin $KAFKA_VERSION
+RUN git checkout -B $KAFKA_VERSION FETCH_HEAD
 RUN ./gradlew clean releaseTarGz --parallel
 RUN mkdir /opt/kafka
 RUN tar -zxvf \$(find ./core/build/distributions/ -maxdepth 1 -type f \( -iname \"kafka*tgz\" ! -iname \"*sit*\" \)) -C /opt/kafka --strip-components=1
