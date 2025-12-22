@@ -21,7 +21,7 @@ source $DOCKER_FOLDER/docker_build_common.sh
 declare -r ACCOUNT=${ACCOUNT:-opensource4you}
 declare -r VERSION=${VERSION:-main}
 declare -r KAFKA_ACCOUNT=${KAFKA_ACCOUNT:-apache}
-declare -r KAFKA_VERSION=${KAFKA_REVISION:-${KAFKA_VERSION:-4.0.0}}
+declare -r KAFKA_VERSION=${KAFKA_REVISION:-${KAFKA_VERSION:-4.1.1}}
 declare -r DOCKERFILE=$DOCKER_FOLDER/broker.dockerfile
 declare -r DATA_FOLDER_IN_CONTAINER_PREFIX="/tmp/log-folder"
 declare -r EXPORTER_VERSION="0.16.1"
@@ -66,7 +66,7 @@ function showHelp() {
   echo "    ACCOUNT=opensource4you                      set the github account for astraea repo"
   echo "    HEAP_OPTS=\"-Xmx2G -Xms2G\"                set broker JVM memory"
   echo "    KAFKA_REVISION=trunk                           set revision of kafka source code to build container"
-  echo "    KAFKA_VERSION=4.0.0                            set version of kafka distribution"
+  echo "    KAFKA_VERSION=4.1.1                            set version of kafka distribution"
   echo "    BUILD=false                              set true if you want to build image locally"
   echo "    RUN=false                                set false if you want to build/pull image only"
   echo "    DATA_FOLDERS=/tmp/folder1                set host folders used by broker"
@@ -102,7 +102,7 @@ RUN git checkout $VERSION
 RUN ./gradlew clean build -x test
 RUN cp /tmp/astraea/common/build/libs/*.jar /opt/kafka/libs/
 
-FROM azul/zulu-openjdk:23-jre
+FROM azul/zulu-openjdk:25-jre
 
 # copy kafka
 COPY --from=build /opt/jmx_exporter /opt/jmx_exporter
@@ -125,7 +125,7 @@ function generateDockerfileByVersion() {
   local kafka_url="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/kafka_2.13-${KAFKA_VERSION}.tgz"
   local version=$KAFKA_VERSION
   if [[ "$KAFKA_VERSION" == *"rc"* ]]; then
-    ## `4.0.0-rc1` the rc release does not exist in archive repo
+    ## `4.1.1-rc1` the rc release does not exist in archive repo
     version=${KAFKA_VERSION%-*}
     kafka_url="https://dist.apache.org/repos/dist/dev/kafka/${KAFKA_VERSION}/kafka_2.13-${version}.tgz"
   fi
@@ -147,7 +147,7 @@ RUN wget $kafka_url
 RUN mkdir /opt/kafka
 RUN tar -zxvf kafka_2.13-${version}.tgz -C /opt/kafka --strip-components=1
 
-FROM azul/zulu-openjdk:23-jre
+FROM azul/zulu-openjdk:25-jre
 
 # copy kafka
 COPY --from=build /opt/jmx_exporter /opt/jmx_exporter
@@ -218,7 +218,7 @@ function setLogDirs() {
 
 function generateJmxConfigMountCommand() {
     if [[ "$JMX_CONFIG_FILE" != "" ]]; then
-        echo "-v $JMX_CONFIG_FILE:$JMX_CONFIG_FILE_IN_CONTAINER_PATH:ro:Z"
+        echo "-v $JMX_CONFIG_FILE:$JMX_CONFIG_FILE_IN_CONTAINER_PATH:ro,Z"
     else
         echo ""
     fi

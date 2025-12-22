@@ -35,9 +35,11 @@ import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
-import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.admin.FeatureUpdate;
+import org.apache.kafka.clients.admin.GroupListing;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
+import org.apache.kafka.clients.admin.ListShareGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
 import org.apache.kafka.clients.admin.MemberToRemove;
 import org.apache.kafka.clients.admin.NewPartitionReassignment;
@@ -112,6 +114,10 @@ class AdminImpl implements Admin {
     return f;
   }
 
+  private org.apache.kafka.clients.admin.Admin admin(boolean fromController) {
+    return fromController ? controllerAdmin : kafkaAdmin;
+  }
+
   @Override
   public String clientId() {
     return clientId;
@@ -140,7 +146,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<FeatureInfo> feature() {
-    return to(kafkaAdmin.describeFeatures().featureMetadata())
+    return to(admin(false).describeFeatures().featureMetadata())
         .thenApply(
             f ->
                 new FeatureInfo(
@@ -172,7 +178,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<Set<String>> internalTopicNames() {
-    return to(kafkaAdmin.listTopics(new ListTopicsOptions().listInternal(true)).namesToListings())
+    return to(admin(false).listTopics(new ListTopicsOptions().listInternal(true)).namesToListings())
         .thenApply(
             ts ->
                 ts.entrySet().stream()
@@ -182,15 +188,16 @@ class AdminImpl implements Admin {
   }
 
   @Override
-  public CompletionStage<List<Topic>> topics(Set<String> topics) {
+  public CompletionStage<List<Topic>> topics(Set<String> topics, boolean fromController) {
     if (topics.isEmpty()) return CompletableFuture.completedFuture(List.of());
-
     return FutureUtils.combine(
         doGetConfigs(
             topics.stream()
                 .map(topic -> new ConfigResource(ConfigResource.Type.TOPIC, topic))
-                .collect(Collectors.toList())),
-        to(kafkaAdmin.describeTopics(topics).allTopicNames()),
+                .collect(Collectors.toList()),
+            fromController),
+        // Quorum controller does not support DescribeTopicPartitionsRequest
+        to(admin(false).describeTopics(topics).allTopicNames()),
         (configs, desc) ->
             configs.entrySet().stream()
                 .map(entry -> Topic.of(entry.getKey(), desc.get(entry.getKey()), entry.getValue()))
@@ -201,7 +208,7 @@ class AdminImpl implements Admin {
   @Override
   public CompletionStage<Void> deleteTopics(Set<String> topics) {
     if (topics.isEmpty()) return CompletableFuture.completedFuture(null);
-    return to(kafkaAdmin.deleteTopics(topics).all());
+    return to(admin(false).deleteTopics(topics).all());
   }
 
   @Override
@@ -255,7 +262,7 @@ class AdminImpl implements Admin {
   public CompletionStage<Void> deleteMembers(Set<String> consumerGroups) {
     // kafka APIs disallow to remove all members when there are no members ...
     // Hence, we have to filter the non-empty groups first.
-    return to(kafkaAdmin.describeConsumerGroups(consumerGroups).all())
+    return to(admin(false).describeConsumerGroups(consumerGroups).all())
         .thenApply(
             groups ->
                 groups.entrySet().stream()
@@ -280,13 +287,13 @@ class AdminImpl implements Admin {
   @Override
   public CompletionStage<Void> deleteGroups(Set<String> consumerGroups) {
     return deleteMembers(consumerGroups)
-        .thenCompose(ignored -> to(kafkaAdmin.deleteConsumerGroups(consumerGroups).all()));
+        .thenCompose(ignored -> to(admin(false).deleteConsumerGroups(consumerGroups).all()));
   }
 
   @Override
   public CompletionStage<Set<TopicPartition>> topicPartitions(Set<String> topics) {
     if (topics.isEmpty()) return CompletableFuture.completedFuture(Set.of());
-    return to(kafkaAdmin.describeTopics(topics).allTopicNames())
+    return to(admin(false).describeTopics(topics).allTopicNames())
         .thenApply(
             r ->
                 r.entrySet().stream()
@@ -301,7 +308,7 @@ class AdminImpl implements Admin {
   public CompletionStage<Set<TopicPartitionReplica>> topicPartitionReplicas(Set<Integer> brokers) {
     if (brokers.isEmpty()) return CompletableFuture.completedFuture(Set.of());
     return topicNames(true)
-        .thenCompose(topics -> to(kafkaAdmin.describeTopics(topics).allTopicNames()))
+        .thenCompose(topics -> to(admin(false).describeTopics(topics).allTopicNames()))
         .thenApply(
             r ->
                 r.entrySet().stream()
@@ -327,7 +334,7 @@ class AdminImpl implements Admin {
    */
   private CompletionStage<Set<TopicPartition>> updatableTopicPartitions(Set<String> topics) {
     if (topics.isEmpty()) return CompletableFuture.completedFuture(Set.of());
-    return to(kafkaAdmin.describeTopics(topics).allTopicNames())
+    return to(admin(false).describeTopics(topics).allTopicNames())
         .thenApply(
             ts ->
                 ts.entrySet().stream()
@@ -441,7 +448,7 @@ class AdminImpl implements Admin {
   public CompletionStage<List<Partition>> partitions(Set<String> topics) {
     if (topics.isEmpty()) return CompletableFuture.completedFuture(List.of());
     var updatableTopicPartitions = updatableTopicPartitions(topics);
-    var topicDesc = to(kafkaAdmin.describeTopics(topics).allTopicNames());
+    var topicDesc = to(admin(false).describeTopics(topics).allTopicNames());
     return FutureUtils.combine(
         updatableTopicPartitions.thenCompose(this::earliestOffsets),
         updatableTopicPartitions.thenCompose(this::latestOffsets),
@@ -512,49 +519,70 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<List<Controller>> controllers() {
-    return to(controllerAdmin.describeCluster().nodes())
+    return to(admin(true).describeCluster().nodes())
         .thenCompose(
             nodes ->
-                to(controllerAdmin
-                        .describeConfigs(
-                            nodes.stream()
-                                .map(
-                                    n ->
-                                        new ConfigResource(
-                                            ConfigResource.Type.BROKER, String.valueOf(n.id())))
-                                .toList())
-                        .all())
-                    .thenApply(
-                        configs ->
-                            nodes.stream()
-                                .map(
-                                    n ->
-                                        new Controller(
-                                            n.id(),
-                                            n.host(),
-                                            n.port(),
-                                            new org.astraea.common.admin.Config(
-                                                configs
-                                                    .getOrDefault(
-                                                        new ConfigResource(
-                                                            ConfigResource.Type.BROKER,
-                                                            String.valueOf(n.id())),
-                                                        new Config(List.of()))
-                                                    .entries()
-                                                    .stream()
-                                                    .filter(
-                                                        entry ->
-                                                            entry.value() != null
-                                                                && !entry.value().isBlank())
-                                                    .collect(
-                                                        Collectors.toMap(
-                                                            ConfigEntry::name,
-                                                            ConfigEntry::value)))))
-                                .toList()));
+                to(admin(true).describeMetadataQuorum().quorumInfo())
+                    .thenCompose(
+                        quorumInfo ->
+                            to(controllerAdmin
+                                    .describeConfigs(
+                                        nodes.stream()
+                                            // don't query the died nodes
+                                            .filter(
+                                                n ->
+                                                    quorumInfo.voters().stream()
+                                                            .anyMatch(
+                                                                r ->
+                                                                    r.replicaId() == n.id()
+                                                                        && r.lastCaughtUpTimestamp()
+                                                                            .isPresent())
+                                                        || quorumInfo.observers().stream()
+                                                            .anyMatch(
+                                                                r ->
+                                                                    r.replicaId() == n.id()
+                                                                        && r.lastCaughtUpTimestamp()
+                                                                            .isPresent()))
+                                            .map(
+                                                n ->
+                                                    new ConfigResource(
+                                                        ConfigResource.Type.BROKER,
+                                                        String.valueOf(n.id())))
+                                            .toList())
+                                    .all())
+                                .thenApply(
+                                    configs ->
+                                        nodes.stream()
+                                            .map(
+                                                n ->
+                                                    new Controller(
+                                                        n.id(),
+                                                        n.host(),
+                                                        n.port(),
+                                                        new org.astraea.common.admin.Config(
+                                                            configs
+                                                                .getOrDefault(
+                                                                    new ConfigResource(
+                                                                        ConfigResource.Type.BROKER,
+                                                                        String.valueOf(n.id())),
+                                                                    new Config(List.of()))
+                                                                .entries()
+                                                                .stream()
+                                                                .filter(
+                                                                    entry ->
+                                                                        entry.value() != null
+                                                                            && !entry
+                                                                                .value()
+                                                                                .isBlank())
+                                                                .collect(
+                                                                    Collectors.toMap(
+                                                                        ConfigEntry::name,
+                                                                        ConfigEntry::value)))))
+                                            .toList())));
   }
 
   private CompletionStage<Map.Entry<String, List<Broker>>> clusterIdAndBrokers() {
-    var cluster = kafkaAdmin.describeCluster();
+    var cluster = admin(false).describeCluster();
     var nodeFuture = to(cluster.nodes());
     return FutureUtils.combine(
         to(cluster.clusterId()),
@@ -573,7 +601,8 @@ class AdminImpl implements Admin {
                             n ->
                                 new ConfigResource(
                                     ConfigResource.Type.BROKER, String.valueOf(n.id())))
-                        .collect(Collectors.toList()))),
+                        .collect(Collectors.toList()),
+                    false)),
         nodeFuture,
         (id, controller, logDirs, configs, nodes) ->
             Map.entry(
@@ -591,32 +620,78 @@ class AdminImpl implements Admin {
   }
 
   @Override
-  public CompletionStage<Set<String>> consumerGroupIds() {
-    return to(kafkaAdmin.listConsumerGroups().all())
+  public CompletionStage<List<ShareGroup>> shareGroups(Set<String> shareGroupIds) {
+    if (shareGroupIds.isEmpty()) return CompletableFuture.completedFuture(List.of());
+    return FutureUtils.combine(
+        to(admin(false).describeShareGroups(shareGroupIds).all()),
+        kafkaAdmin
+            .listShareGroupOffsets(
+                shareGroupIds.stream()
+                    .collect(
+                        Collectors.toUnmodifiableMap(
+                            Function.identity(), __ -> new ListShareGroupOffsetsSpec())))
+            .all()
+            .toCompletionStage(),
+        (shareGroupDescriptions, shareGroupMetadata) ->
+            shareGroupDescriptions.entrySet().stream()
+                .map(
+                    g ->
+                        new ShareGroup(
+                            g.getKey(),
+                            g.getValue().groupState().toString(),
+                            g.getValue().coordinator().id(),
+                            g.getValue().groupEpoch(),
+                            g.getValue().targetAssignmentEpoch(),
+                            shareGroupMetadata.get(g.getKey()).entrySet().stream()
+                                .filter(e -> e.getValue() != null)
+                                .collect(
+                                    Collectors.toUnmodifiableMap(
+                                        tp -> TopicPartition.from(tp.getKey()),
+                                        offset -> offset.getValue().offset())),
+                            g.getValue().members().stream()
+                                .collect(
+                                    Collectors.toMap(
+                                        m ->
+                                            new ShareMember(
+                                                g.getKey(),
+                                                m.consumerId(),
+                                                m.clientId(),
+                                                m.memberEpoch(),
+                                                m.host()),
+                                        m ->
+                                            m.assignment().topicPartitions().stream()
+                                                .map(TopicPartition::from)
+                                                .collect(Collectors.toUnmodifiableSet())))))
+                .toList());
+  }
+
+  @Override
+  public CompletionStage<Map<GroupType, Set<String>>> groupIds() {
+    return to(admin(false).listGroups().all())
         .thenApply(
             gs ->
                 gs.stream()
-                    .map(ConsumerGroupListing::groupId)
-                    .collect(Collectors.toCollection(TreeSet::new)));
+                    .filter(g -> g.type().isPresent())
+                    .collect(
+                        Collectors.groupingBy(
+                            g -> GroupType.of(g.type().get()),
+                            Collectors.mapping(
+                                GroupListing::groupId, Collectors.toUnmodifiableSet()))));
   }
 
   @Override
   public CompletionStage<List<ConsumerGroup>> consumerGroups(Set<String> consumerGroupIds) {
     if (consumerGroupIds.isEmpty()) return CompletableFuture.completedFuture(List.of());
     return FutureUtils.combine(
-        to(kafkaAdmin.describeConsumerGroups(consumerGroupIds).all()),
-        FutureUtils.sequence(
+        to(admin(false).describeConsumerGroups(consumerGroupIds).all()),
+        kafkaAdmin
+            .listConsumerGroupOffsets(
                 consumerGroupIds.stream()
-                    .map(
-                        id ->
-                            kafkaAdmin
-                                .listConsumerGroupOffsets(id)
-                                .partitionsToOffsetAndMetadata()
-                                .thenApply(of -> Map.entry(id, of)))
-                    .map(f -> to(f).toCompletableFuture())
-                    .toList())
-            .thenApply(
-                s -> s.stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))),
+                    .collect(
+                        Collectors.toMap(
+                            Function.identity(), __ -> new ListConsumerGroupOffsetsSpec())))
+            .all()
+            .toCompletionStage(),
         (consumerGroupDescriptions, consumerGroupMetadata) ->
             consumerGroupIds.stream()
                 .map(
@@ -628,6 +703,7 @@ class AdminImpl implements Admin {
                             consumerGroupDescriptions.get(groupId).type().toString(),
                             consumerGroupDescriptions.get(groupId).coordinator().id(),
                             consumerGroupMetadata.get(groupId).entrySet().stream()
+                                .filter(e -> e.getValue() != null)
                                 .collect(
                                     Collectors.toUnmodifiableMap(
                                         tp -> TopicPartition.from(tp.getKey()),
@@ -636,7 +712,7 @@ class AdminImpl implements Admin {
                                 .collect(
                                     Collectors.toUnmodifiableMap(
                                         member ->
-                                            new Member(
+                                            new ConsumerMember(
                                                 groupId,
                                                 member.consumerId(),
                                                 member.groupInstanceId(),
@@ -694,7 +770,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<Set<String>> transactionIds() {
-    return to(kafkaAdmin.listTransactions().all())
+    return to(admin(false).listTransactions().all())
         .thenApply(
             t ->
                 t.stream()
@@ -705,7 +781,7 @@ class AdminImpl implements Admin {
   @Override
   public CompletionStage<List<Transaction>> transactions(Set<String> transactionIds) {
     if (transactionIds.isEmpty()) return CompletableFuture.completedFuture(List.of());
-    return to(kafkaAdmin.describeTransactions(transactionIds).all())
+    return to(admin(false).describeTransactions(transactionIds).all())
         .thenApply(
             ts ->
                 ts.entrySet().stream()
@@ -734,8 +810,8 @@ class AdminImpl implements Admin {
     // pre-group folders by (broker -> topic partition) to speedup seek
     return FutureUtils.combine(
         logDirs(),
-        to(kafkaAdmin.describeTopics(topics).allTopicNames()),
-        to(kafkaAdmin.listPartitionReassignments().reassignments())
+        to(admin(false).describeTopics(topics).allTopicNames()),
+        to(admin(false).listPartitionReassignments().reassignments())
             // supported version: 2.4.0
             // https://issues.apache.org/jira/browse/KAFKA-8345
             .exceptionally(exceptionHandler(UnsupportedVersionException.class, Map.of())),
@@ -802,7 +878,7 @@ class AdminImpl implements Admin {
                                                   .isFuture(pathAndReplica.getValue().isFuture())
                                                   .isOffline(
                                                       node.isEmpty()
-                                                          || pathAndReplica.getKey().equals(""))
+                                                          || pathAndReplica.getKey().isEmpty())
                                                   // The first replica in the return result is the
                                                   // preferred leader. This only works with Kafka
                                                   // broker version after 0.11. Version before
@@ -854,7 +930,7 @@ class AdminImpl implements Admin {
 
   private CompletionStage<Map<ClientQuotaEntity, Map<String, Double>>> quotas(
       ClientQuotaFilter filter) {
-    return to(kafkaAdmin.describeClientQuotas(filter).entities());
+    return to(admin(false).describeClientQuotas(filter).entities());
   }
 
   @Override
@@ -897,7 +973,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<QuorumInfo> quorumInfo() {
-    return to(kafkaAdmin.describeMetadataQuorum().quorumInfo())
+    return to(admin(false).describeMetadataQuorum().quorumInfo())
         .thenApply(
             quorumInfo ->
                 new QuorumInfo(
@@ -930,7 +1006,8 @@ class AdminImpl implements Admin {
                                 Map.Entry::getKey,
                                 e ->
                                     e.getValue().endpoints().stream()
-                                        .map(p -> new RaftEndpoint(p.name(), p.host(), p.port()))
+                                        .map(
+                                            p -> new RaftEndpoint(p.listener(), p.host(), p.port()))
                                         .toList()))));
   }
 
@@ -950,7 +1027,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<Void> removeVoter(int nodeId, String directoryId) {
-    return to(kafkaAdmin.removeRaftVoter(nodeId, Uuid.fromString(directoryId)).all());
+    return to(admin(false).removeRaftVoter(nodeId, Uuid.fromString(directoryId)).all());
   }
 
   @Override
@@ -1294,7 +1371,7 @@ class AdminImpl implements Admin {
 
   @Override
   public CompletionStage<Void> addPartitions(String topic, int total) {
-    return to(kafkaAdmin.createPartitions(Map.of(topic, NewPartitions.increaseTo(total))).all());
+    return to(admin(false).createPartitions(Map.of(topic, NewPartitions.increaseTo(total))).all());
   }
 
   @Override
@@ -1304,7 +1381,8 @@ class AdminImpl implements Admin {
             .collect(
                 Collectors.toMap(
                     e -> new ConfigResource(ConfigResource.Type.TOPIC, e.getKey()),
-                    Map.Entry::getValue)));
+                    Map.Entry::getValue)),
+        false);
   }
 
   @Override
@@ -1334,7 +1412,8 @@ class AdminImpl implements Admin {
             .collect(
                 Collectors.toMap(
                     e -> new ConfigResource(ConfigResource.Type.TOPIC, e.getKey()),
-                    Map.Entry::getValue)));
+                    Map.Entry::getValue)),
+        false);
   }
 
   @Override
@@ -1344,7 +1423,19 @@ class AdminImpl implements Admin {
             .collect(
                 Collectors.toMap(
                     e -> new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(e.getKey())),
-                    Map.Entry::getValue)));
+                    Map.Entry::getValue)),
+        false);
+  }
+
+  @Override
+  public CompletionStage<Void> setControllerConfigs(Map<Integer, Map<String, String>> override) {
+    return doSetConfigs(
+        override.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    e -> new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(e.getKey())),
+                    Map.Entry::getValue)),
+        true);
   }
 
   @Override
@@ -1354,12 +1445,25 @@ class AdminImpl implements Admin {
             .collect(
                 Collectors.toMap(
                     e -> new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(e.getKey())),
-                    Map.Entry::getValue)));
+                    Map.Entry::getValue)),
+        false);
+  }
+
+  @Override
+  public CompletionStage<Void> unsetControllerConfigs(Map<Integer, Set<String>> unset) {
+    return doUnsetConfigs(
+        unset.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    e -> new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(e.getKey())),
+                    Map.Entry::getValue)),
+        true);
   }
 
   @Override
   public CompletionStage<Void> setClusterConfigs(Map<String, String> override) {
-    return doSetConfigs(Map.of(new ConfigResource(ConfigResource.Type.BROKER, ""), override));
+    return doSetConfigs(
+        Map.of(new ConfigResource(ConfigResource.Type.BROKER, ""), override), false);
   }
 
   @Override
@@ -1380,8 +1484,8 @@ class AdminImpl implements Admin {
   }
 
   private CompletionStage<Map<String, Map<String, String>>> doGetConfigs(
-      Collection<ConfigResource> resources) {
-    return to(kafkaAdmin.describeConfigs(resources).all())
+      Collection<ConfigResource> resources, boolean fromController) {
+    return to(admin(fromController).describeConfigs(resources).all())
         .thenApply(
             allConfigs ->
                 allConfigs.entrySet().stream()
@@ -1404,7 +1508,7 @@ class AdminImpl implements Admin {
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     if (nonEmptyAppend.isEmpty()) return CompletableFuture.completedFuture(null);
 
-    return doGetConfigs(nonEmptyAppend.keySet())
+    return doGetConfigs(nonEmptyAppend.keySet(), false)
         .thenCompose(
             allConfigs -> {
               // append to empty will cause bug (see https://github.com/apache/kafka/pull/12503)
@@ -1464,9 +1568,9 @@ class AdminImpl implements Admin {
                                                   AlterConfigOp.OpType.APPEND))
                                       .collect(Collectors.toList())));
 
-              return doSetConfigs(requestToSet)
+              return doSetConfigs(requestToSet, false)
                   .thenCompose(
-                      ignored -> to(kafkaAdmin.incrementalAlterConfigs(requestToAppend).all()));
+                      ignored -> to(admin(false).incrementalAlterConfigs(requestToAppend).all()));
             });
   }
 
@@ -1480,7 +1584,7 @@ class AdminImpl implements Admin {
 
     if (nonEmptySubtract.isEmpty()) return CompletableFuture.completedFuture(null);
 
-    return doGetConfigs(nonEmptySubtract.keySet())
+    return doGetConfigs(nonEmptySubtract.keySet(), false)
         .thenCompose(
             configs -> {
               Map<ConfigResource, Collection<AlterConfigOp>> requestToSubtract =
@@ -1527,11 +1631,12 @@ class AdminImpl implements Admin {
                                                   new ConfigEntry(e.getKey(), e.getValue()),
                                                   AlterConfigOp.OpType.SUBTRACT))
                                       .collect(Collectors.toList())));
-              return to(kafkaAdmin.incrementalAlterConfigs(requestToSubtract).all());
+              return to(admin(false).incrementalAlterConfigs(requestToSubtract).all());
             });
   }
 
-  private CompletionStage<Void> doSetConfigs(Map<ConfigResource, Map<String, String>> override) {
+  private CompletionStage<Void> doSetConfigs(
+      Map<ConfigResource, Map<String, String>> override, boolean fromController) {
 
     var nonEmptyOverride =
         override.entrySet().stream()
@@ -1556,24 +1661,11 @@ class AdminImpl implements Admin {
                                 .collect(Collectors.toList())))
                 .filter(e -> !e.getValue().isEmpty())
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-    Supplier<Map<ConfigResource, Config>> previousVersion =
-        () ->
-            nonEmptyOverride.entrySet().stream()
-                .map(
-                    e ->
-                        Map.entry(
-                            e.getKey(),
-                            new org.apache.kafka.clients.admin.Config(
-                                e.getValue().entrySet().stream()
-                                    .map(entry -> new ConfigEntry(entry.getKey(), entry.getValue()))
-                                    .collect(Collectors.toList()))))
-                .filter(e -> !e.getValue().entries().isEmpty())
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-    return to(kafkaAdmin.incrementalAlterConfigs(newVersion.get()).all());
+    return to(admin(fromController).incrementalAlterConfigs(newVersion.get()).all());
   }
 
-  private CompletionStage<Void> doUnsetConfigs(Map<ConfigResource, Set<String>> unset) {
+  private CompletionStage<Void> doUnsetConfigs(
+      Map<ConfigResource, Set<String>> unset, boolean fromController) {
     var nonEmptyUnset =
         unset.entrySet().stream()
             .filter(e -> !e.getValue().isEmpty())
@@ -1595,12 +1687,12 @@ class AdminImpl implements Admin {
                                             new ConfigEntry(key, ""), AlterConfigOp.OpType.DELETE))
                                 .collect(Collectors.toList())));
 
-    return to(kafkaAdmin.incrementalAlterConfigs(newVersion.get()).all());
+    return to(admin(fromController).incrementalAlterConfigs(newVersion.get()).all());
   }
 
   @Override
   public void close() {
-    kafkaAdmin.close();
+    admin(false).close();
     controllerAdmin.close();
   }
 
@@ -1612,7 +1704,7 @@ class AdminImpl implements Admin {
     return brokers()
         .thenApply(
             brokers -> brokers.stream().map(Broker::id).collect(Collectors.toUnmodifiableSet()))
-        .thenCompose(ids -> to(kafkaAdmin.describeLogDirs(ids).allDescriptions()))
+        .thenCompose(ids -> to(admin(false).describeLogDirs(ids).allDescriptions()))
         .thenApply(
             ds ->
                 ds.entrySet().stream()

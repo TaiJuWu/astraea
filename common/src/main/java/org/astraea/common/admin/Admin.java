@@ -18,6 +18,8 @@ package org.astraea.common.admin;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -92,7 +94,11 @@ public interface Admin extends AutoCloseable {
                                 .collect(Collectors.toUnmodifiableSet())));
   }
 
-  CompletionStage<List<Topic>> topics(Set<String> topics);
+  default CompletionStage<List<Topic>> topics(Set<String> topics) {
+    return topics(topics, false);
+  }
+
+  CompletionStage<List<Topic>> topics(Set<String> topics, boolean fromController);
 
   /**
    * @param topics target
@@ -185,9 +191,26 @@ public interface Admin extends AutoCloseable {
             brokers -> brokers.stream().collect(Collectors.toMap(Broker::id, Broker::dataFolders)));
   }
 
-  CompletionStage<Set<String>> consumerGroupIds();
+  default CompletionStage<Set<String>> consumerGroupIds() {
+    return groupIds()
+        .thenApply(
+            gs -> {
+              var ids = new HashSet<String>();
+              ids.addAll(gs.getOrDefault(GroupType.CONSUMER, Set.of()));
+              ids.addAll(gs.getOrDefault(GroupType.CLASSIC, Set.of()));
+              return Collections.unmodifiableSet(ids);
+            });
+  }
+
+  default CompletionStage<Set<String>> shareGroupIds() {
+    return groupIds().thenApply(gs -> gs.getOrDefault(GroupType.SHARE, Set.of()));
+  }
+
+  CompletionStage<Map<GroupType, Set<String>>> groupIds();
 
   CompletionStage<List<ConsumerGroup>> consumerGroups(Set<String> consumerGroupIds);
+
+  CompletionStage<List<ShareGroup>> shareGroups(Set<String> shareGroupIds);
 
   CompletionStage<List<ProducerState>> producerStates(Set<TopicPartition> partitions);
 
@@ -350,11 +373,15 @@ public interface Admin extends AutoCloseable {
    */
   CompletionStage<Void> setBrokerConfigs(Map<Integer, Map<String, String>> override);
 
+  CompletionStage<Void> setControllerConfigs(Map<Integer, Map<String, String>> override);
+
   /**
    * unset the value associated to given keys. The unset config will become either null of default
    * value. Normally, the default value is defined by server.properties or hardcode in source code.
    */
   CompletionStage<Void> unsetBrokerConfigs(Map<Integer, Set<String>> unset);
+
+  CompletionStage<Void> unsetControllerConfigs(Map<Integer, Set<String>> unset);
 
   CompletionStage<Void> setClusterConfigs(Map<String, String> override);
 
