@@ -321,6 +321,7 @@ setPropertyIfEmpty "offsets.topic.replication.factor" "1"
 setPropertyIfEmpty "share.coordinator.state.topic.replication.factor" "1"
 setPropertyIfEmpty "transaction.state.log.min.isr" "1"
 setPropertyIfEmpty "min.insync.replicas" "1"
+setPropertyIfEmpty "group.share.enable" "true"
 setLogDirs
 
 command="./bin/kafka-server-start.sh /tmp/broker.properties"
